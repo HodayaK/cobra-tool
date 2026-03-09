@@ -158,7 +158,7 @@ bucket_object = aws.s3.BucketObject(
 # SSM Parameter (String)
 ssm_param = aws.ssm.Parameter(
     "secret-param",
-    name="cobra-scenario-8/secret",
+    name="/cobra-scenario-8/secret",
     type="String",
     value="cobra-s8-demo-secret-value",
 )

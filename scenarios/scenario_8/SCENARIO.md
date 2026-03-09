@@ -101,7 +101,7 @@ It helps organizations evaluate:
 - Using the **victim EC2 instance IAM role**, the attacker:
   - **Lists S3 buckets** in the account.
   - **Reads sensitive data** from the scenario’s S3 bucket (e.g. `sensitive/data.txt`).
-  - **Retrieves secrets** from AWS Systems Manager Parameter Store (e.g. `cobra-scenario-8/secret`).
+  - **Retrieves secrets** from AWS Systems Manager Parameter Store (e.g. `/cobra-scenario-8/secret`).
   - **Creates a Lambda function** (`cobra-s8-backdoor`) for **persistence**.
 - No S3 deletion is performed; the scenario is kept simple.
 
