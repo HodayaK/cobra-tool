@@ -1,0 +1,9 @@
+name: infra
+runtime:
+  name: python
+
+description: Scenario 8 - Vulnerable web app, attacker EC2, S3, SSM, Lambda persistence
+config:
+  pulumi:tags:
+    value:
+      pulumi:template: ""

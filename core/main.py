@@ -15,6 +15,7 @@ from scenarios.scenario_3.scenario_3 import scenario_3_execute
 from scenarios.scenario_4.scenario_4 import scenario_4_execute
 from scenarios.scenario_5.scenario_5 import scenario_5_execute
 from scenarios.scenario_6.scenario_6 import scenario_6_execute
+from scenarios.scenario_8.scenario_8 import scenario_8_execute
 
 def loading_animation():
     chars = "/—\\|"
@@ -51,12 +52,13 @@ def select_attack_scenario():
     print(colored("5. Instance takeover, abuse s3 access & perform ransomware using external KMS key", color="green"))
     print(colored("6. Azure Web Exploit, Abuse Managed Identity, Extract Secrets from Key Vault", color="green"))
     print(colored("7. Container Escape & Cluster Takeover in EKS", color="green"))
-    print(colored("8. Exit", color="green"))
+    print(colored("8. Vulnerable web app (command injection) -> EC2 RCE -> S3, SSM, Lambda persistence", color="green"))
+    print(colored("9. Exit", color="green"))
     while True:
         try:
             choice = int(input(colored("Enter your choice: ", color="yellow")))
-            if choice not in [1, 2, 3, 4, 5, 6, 7, 8]:
-                raise ValueError(colored("Invalid choice. Please enter 1, 2, 3, 4, 5, 6, 7 or 8.", color="red"))
+            if choice not in [1, 2, 3, 4, 5, 6, 7, 8, 9]:
+                raise ValueError(colored("Invalid choice. Please enter 1, 2, 3, 4, 5, 6, 7, 8 or 9.", color="red"))
             return choice
         except ValueError as e:
             print(e)
@@ -90,8 +92,10 @@ def execute_scenario(x, manual):
         elif x == 6:
             scenario_6_execute()
         elif x == 7:
-            scenario_7.ScenarioExecution().scenario_7_execute()           
+            scenario_7.ScenarioExecution().scenario_7_execute()
         elif x == 8:
+            scenario_8_execute(manual)
+        elif x == 9:
             exit
         else: 
             print("Invalid Scenario Selected")
@@ -108,7 +112,9 @@ def post_execute_scenario(x):
             scenario_2.ScenarioExecution.post_execution("None")
         elif x == 7:
             scenario_7.ScenarioExecution.post_execution("None")
-        else: 
+        elif x == 8:
+            print(colored("Scenario 8 post-launch: see scenarios/scenario_8/SCENARIO.md", color="yellow"))
+        else:
             print("Invalid Scenario Selected")
         print(colored("Thank you for using COBRA!", color="green"))
     except Exception as e:
@@ -134,8 +140,11 @@ def main(action, simulation, scenario, manual):
             elif scenario_choice == 6:
                 execute_scenario(6, manual)                
             elif scenario_choice == 7:
-                execute_scenario(7, manual)  
-                #print(colored("Scenario coming soon!", color="yellow"))
+                execute_scenario(7, manual)
+            elif scenario_choice == 8:
+                execute_scenario(8, manual)
+            elif scenario_choice == 9:
+                return
     elif action == 'post-launch':
         if simulation is True:
             scenario_choice = select_attack_scenario()
@@ -146,6 +155,8 @@ def main(action, simulation, scenario, manual):
                 post_execute_scenario(2)
             elif scenario_choice == 7:
                 post_execute_scenario(7)
+            elif scenario_choice == 8:
+                post_execute_scenario(8)
     elif action == 'status' and scenario == "cobra-scenario-1":
         subprocess.call("cd ./scenarios/scenario_1/infra/ && pulumi stack ls", shell=True)
     elif action == 'status' and scenario == "cobra-scenario-2":
@@ -164,6 +175,10 @@ def main(action, simulation, scenario, manual):
         subprocess.call("cd ./scenarios/scenario_6/infra && terraform destroy --auto-approve", shell=True)
     elif action == 'destroy' and scenario == "cobra-scenario-7":
         subprocess.call("cd ./scenarios/scenario_7/infra && pulumi destroy -s cobra-scenario-7 --yes", shell=True)
+    elif action == 'status' and scenario == "cobra-scenario-8":
+        subprocess.call("cd ./scenarios/scenario_8/infra/ && pulumi stack ls", shell=True)
+    elif action == 'destroy' and scenario == "cobra-scenario-8":
+        subprocess.call("cd ./scenarios/scenario_8/infra && pulumi destroy -s cobra-scenario-8 --yes", shell=True)
 
     else:
         print('No options provided. --help to know more')
