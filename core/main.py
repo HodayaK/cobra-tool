@@ -15,7 +15,7 @@ from scenarios.scenario_3.scenario_3 import scenario_3_execute
 from scenarios.scenario_4.scenario_4 import scenario_4_execute
 from scenarios.scenario_5.scenario_5 import scenario_5_execute
 from scenarios.scenario_6.scenario_6 import scenario_6_execute
-from scenarios.scenario_8.scenario_8 import scenario_8_execute
+from scenarios.scenario_8.scenario_8 import scenario_8_execute, scenario_8_destroy
 
 def loading_animation():
     chars = "/—\\|"
@@ -178,7 +178,7 @@ def main(action, simulation, scenario, manual):
     elif action == 'status' and scenario == "cobra-scenario-8":
         subprocess.call("cd ./scenarios/scenario_8/infra/ && pulumi stack ls", shell=True)
     elif action == 'destroy' and scenario == "cobra-scenario-8":
-        subprocess.call("cd ./scenarios/scenario_8/infra && pulumi destroy -s cobra-scenario-8 --yes", shell=True)
+        scenario_8_destroy()
 
     else:
         print('No options provided. --help to know more')

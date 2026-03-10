@@ -15,6 +15,45 @@ from tqdm import tqdm
 from core.helpers import generate_ssh_key, loading_animation
 
 
+def scenario_8_destroy():
+    """Delete exploit-created resources (Lambda, IAM user) then run Pulumi destroy."""
+    out_path = "./core/cobra-scenario-8-output.json"
+    region = "us-east-1"
+    if os.path.exists(out_path):
+        try:
+            with open(out_path, "r") as f:
+                data = json.load(f)
+                region = data.get("Region", region)
+        except (json.JSONDecodeError, KeyError):
+            pass
+
+    print(colored(
+        "Deleting manually created resources (not tracked by Pulumi state)",
+        color="red",
+    ))
+    loading_animation()
+    print("-" * 30)
+
+    # Delete Lambda function created by exploit
+    subprocess.call(
+        f"aws lambda delete-function --function-name cobra-s8-backdoor --region {region}",
+        shell=True,
+    )
+
+    # Delete IAM user and access keys created by exploit (same pattern as scenario 2)
+    subprocess.call(
+        "aws iam list-access-keys --user-name cobra-s8-persist | jq -r '.AccessKeyMetadata[0].AccessKeyId' | xargs -I {} aws iam delete-access-key --user-name cobra-s8-persist --access-key-id {}",
+        shell=True,
+    )
+    subprocess.call("aws iam delete-user --user-name cobra-s8-persist", shell=True)
+
+    print(colored("Running Pulumi destroy...", color="yellow"))
+    subprocess.call(
+        "cd ./scenarios/scenario_8/infra && pulumi destroy -s cobra-scenario-8 --yes",
+        shell=True,
+    )
+
+
 def _run_via_attacker(attacker_ip, web_server_ip, cmd, key_path="./id_rsa"):
     """Run a command on the web server by SSH to attacker and curling the vulnerable app."""
     encoded = quote(cmd, safe="")
