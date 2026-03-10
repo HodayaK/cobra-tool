@@ -79,24 +79,7 @@ elevated_role = aws.iam.Role(
     ),
 )
 
-elevated_role_policy = json.dumps({
-    "Version": "2012-10-17",
-    "Statement": [
-        {"Effect": "Allow", "Action": ["ssm:GetParameter", "ssm:GetParameters"], "Resource": "*"},
-        {
-            "Effect": "Allow",
-            "Action": ["iam:CreateUser", "iam:CreateAccessKey", "iam:AttachUserPolicy", "iam:GetUser"],
-            "Resource": f"arn:aws:iam::{current.account_id}:user/cobra-s8-*",
-        },
-    ],
-})
-aws.iam.RolePolicy(
-    "elevated-role-policy",
-    role=elevated_role.name,
-    policy=elevated_role_policy,
-)
-
-def victim_policy_document(lambda_role_arn, elevated_role_arn):
+def elevated_role_policy_document(lambda_role_arn):
     return json.dumps({
         "Version": "2012-10-17",
         "Statement": [
@@ -104,6 +87,24 @@ def victim_policy_document(lambda_role_arn, elevated_role_arn):
             {"Effect": "Allow", "Action": ["ssm:GetParameter", "ssm:GetParameters"], "Resource": "*"},
             {"Effect": "Allow", "Action": ["lambda:CreateFunction", "lambda:GetFunction"], "Resource": "*"},
             {"Effect": "Allow", "Action": "iam:PassRole", "Resource": lambda_role_arn},
+            {
+                "Effect": "Allow",
+                "Action": ["iam:CreateUser", "iam:CreateAccessKey", "iam:AttachUserPolicy", "iam:GetUser"],
+                "Resource": f"arn:aws:iam::{current.account_id}:user/cobra-s8-*",
+            },
+        ],
+    })
+
+aws.iam.RolePolicy(
+    "elevated-role-policy",
+    role=elevated_role.name,
+    policy=lambda_exec_role.arn.apply(elevated_role_policy_document),
+)
+
+def victim_policy_document(elevated_role_arn):
+    return json.dumps({
+        "Version": "2012-10-17",
+        "Statement": [
             {"Effect": "Allow", "Action": "sts:AssumeRole", "Resource": elevated_role_arn},
         ],
     })
@@ -111,9 +112,7 @@ def victim_policy_document(lambda_role_arn, elevated_role_arn):
 victim_policy = aws.iam.RolePolicy(
     "victim-policy",
     role=victim_role.name,
-    policy=pulumi.Output.all(lambda_exec_role.arn, elevated_role.arn).apply(
-        lambda t: victim_policy_document(t[0], t[1])
-    ),
+    policy=elevated_role.arn.apply(victim_policy_document),
 )
 victim_profile = aws.iam.InstanceProfile("victim-profile", role=victim_role.name)
 

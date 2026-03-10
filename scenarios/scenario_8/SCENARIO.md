@@ -1,4 +1,4 @@
-# Scenario 8: Vulnerable Web App (Command Injection) -> EC2 RCE -> S3, SSM, Lambda, AssumeRole Escalation, and Persistence
+# Scenario 8: Vulnerable Web App (Command Injection) -> EC2 RCE -> AssumeRole Privilege Escalation -> S3, SSM, Lambda -> Persistence
 
 ## 1. Overview
 
@@ -6,20 +6,20 @@
 
 This scenario demonstrates a realistic cloud attack chain:
 
-1. **Entry:** A web application on an EC2 instance accepts user input (e.g. a "command" or "query" parameter) and runs it on the server **without sanitization**, leading to **command injection** and **remote code execution (RCE)**.
-2. **Lateral use of identity:** The victim EC2 has an **IAM instance profile**. Once the attacker has RCE (a "shell" via the vulnerable app), they run **boto3** on the victim host to use the instance role credentials and access other AWS services.
-3. **Impact:** The attacker lists and reads **S3** data, retrieves **SSM Parameter Store** secrets, and creates a **Lambda function** for **persistence**. Then they perform **privilege escalation** by calling **STS AssumeRole** from the victim EC2 to assume an elevated IAM role, use that role to read the same SSM secret (demonstrating escalated access), and create an **IAM user** with access keys for **long-term persistence** in the account.
+1. **Entry:** A web application on an EC2 instance (the **web server**) accepts user input (e.g. a "command" or "query" parameter) and runs it on the server **without sanitization**, leading to **command injection** and **remote code execution (RCE)**.
+2. **Privilege escalation:** The web server has an **IAM instance profile** with **only** `sts:AssumeRole` permission (no direct S3, SSM, or Lambda access). Once the attacker has RCE, they use the web server's credentials to call **STS AssumeRole** and assume an **elevated IAM role**.
+3. **Impact:** Using the **assumed (elevated) role** credentials, the attacker retrieves the **SSM Parameter Store** secret, reads **S3** sensitive data, creates a **Lambda function** for persistence, and creates an **IAM user** with access keys for **long-term persistence** in the account.
 
 It helps organizations evaluate:
 
 - Application security (input validation, secure coding).
-- Least privilege for EC2 roles (S3, SSM, Lambda, and which roles they can assume).
+- Least privilege for EC2 roles (web server has only AssumeRole; sensitive actions require the elevated role).
 - Detection of credential use from a compromised instance, AssumeRole abuse, and access to sensitive resources.
 
 ### Who would use it and why?
 
 - **Security and red teams:** To run a controlled attack simulation and validate that security controls (WAF, CSPM, detection rules) catch or block the behavior.
-- **Engineers evaluating COBRA:** To see a full chain (web vuln -> RCE -> cloud API abuse -> AssumeRole escalation -> persistence) using two EC2s (victim + attacker) and common AWS services (S3, SSM, Lambda, IAM).
+- **Engineers evaluating COBRA:** To see a full chain (web vuln -> RCE -> AssumeRole escalation -> S3, SSM, Lambda, persistence) using two EC2s (web server + attacker) and common AWS services (S3, SSM, Lambda, IAM).
 
 ---
 
@@ -40,7 +40,7 @@ It helps organizations evaluate:
 ### Dependencies
 
 - Same as the main COBRA tool: `pulumi`, `pulumi_aws`, `pulumi_random`, `termcolor`, `tqdm`, etc. (see `requirements.txt`).
-- The victim EC2 user data installs **Flask** and **boto3** to run the vulnerable app and abuse the instance role.
+- The web server EC2 user data installs **Flask** and **boto3** to run the vulnerable app; the instance role has only **AssumeRole** (elevated role has S3, SSM, Lambda, IAM).
 
 ---
 
@@ -54,14 +54,14 @@ It helps organizations evaluate:
    python3 cobra.py launch --simulation
    ```
 
-   When prompted, select **8** (Vulnerable web app (command injection) -> EC2 RCE -> S3, SSM, Lambda, AssumeRole escalation, persistence).
+   When prompted, select **8** (Vulnerable web app (command injection) -> EC2 RCE -> AssumeRole privilege escalation -> S3, SSM, Lambda -> persistence).
 
    The tool will:
 
    - Generate an SSH key (if needed).
    - Deploy the Pulumi stack `cobra-scenario-8` (two EC2s, S3 bucket, SSM parameter, Lambda execution role, elevated IAM role).
    - Wait for instances and the vulnerable app to be ready.
-   - SSH to the **attacker** EC2 and send HTTP requests to the **victim** app to run: RCE check, S3 list, S3 read, SSM get, Lambda create, then AssumeRole (privilege escalation), get SSM secret with assumed role, and create IAM user for persistence.
+   - SSH to the **attacker** EC2 and send HTTP requests to the **web server** app to run: RCE check, then AssumeRole (privilege escalation); with the assumed role, list S3, read S3 object, get SSM secret, create Lambda, and create IAM user for persistence.
 
 2. **Launch in manual mode (you run the attack steps yourself):**
 
@@ -69,11 +69,11 @@ It helps organizations evaluate:
    python3 cobra.py launch --simulation --manual
    ```
 
-   Select **8**. After infra is up, the tool will print the attacker and victim IPs. Then:
+   Select **8**. After infra is up, the tool will print the attacker and web server IPs. Then:
 
    - SSH to the attacker: `ssh -i ./id_rsa ubuntu@<Attacker_Server_Public_IP>`
    - From the attacker, run e.g.: `curl "http://<Web_Server_Public_IP>:8000/?cmd=id"`
-   - Use the same pattern with `cmd=python3 -c "..."` to run boto3 on the victim (list S3, get S3 object, get SSM parameter, create Lambda, assume elevated role, get SSM with assumed role, create IAM user). Outputs are in `core/cobra-scenario-8-output.json` for bucket name, SSM parameter name, Lambda role ARN, and elevated role ARN.
+   - Use the same pattern with `cmd=python3 -c "..."` to run boto3 on the web server: first assume the elevated role (from `core/cobra-scenario-8-output.json`), then with the assumed-role session list S3, get S3 object, get SSM parameter, create Lambda, and create IAM user. Outputs are in `core/cobra-scenario-8-output.json` for bucket name, SSM parameter name, Lambda role ARN, and elevated role ARN.
 
 3. **Check stack status:**
 
@@ -98,34 +98,32 @@ It helps organizations evaluate:
 | Status | `python3 cobra.py status --scenario cobra-scenario-8` | None |
 | Destroy | `python3 cobra.py destroy --scenario cobra-scenario-8` | None |
 
-**Manual attack steps (from attacker EC2):** After SSH to the attacker instance, you run HTTP requests against the victim app. The app takes a `cmd` query parameter and runs it on the victim (command injection).
+**Manual attack steps (from attacker EC2):** After SSH to the attacker instance, you run HTTP requests against the web server app. The app takes a `cmd` query parameter and runs it on the web server (command injection).
 
 | Step | Sample command (input) | Expected output |
 |------|------------------------|-----------------|
-| RCE check | `curl "http://<Victim_IP>:8000/?cmd=id"` | `uid=0(root) gid=0(root) groups=0(root)` (or similar) |
-| Run arbitrary command on victim | `curl "http://<Victim_IP>:8000/?cmd=whoami"` | `root` |
+| RCE check | `curl "http://<Web_Server_IP>:8000/?cmd=id"` | `uid=0(root) gid=0(root) groups=0(root)` (or similar) |
+| Run arbitrary command on web server | `curl "http://<Web_Server_IP>:8000/?cmd=whoami"` | `root` |
 
-For S3 list/read, SSM get, and Lambda create, the driver uses the same pattern with `cmd=python3 -c "..."` to run boto3 on the victim; resource names (bucket, parameter, role ARN) come from `core/cobra-scenario-8-output.json` after deploy. The **Expected output** block in §4 shows the full automated run.
+The driver runs one script that assumes the elevated role then performs list S3, read S3, get SSM, create Lambda, and create IAM user; resource names (bucket, parameter, role ARN) come from `core/cobra-scenario-8-output.json` after deploy. The **Expected output** block in §4 shows the full automated run.
 
 ### Configurations
 
 - **Stack name:** `cobra-scenario-8` (Pulumi).
 - **Region:** Uses your default AWS region (or the one configured for the CLI).
-- **Ports:** Victim app listens on **8000**; security group allows 22 (SSH) and 8000 from 0.0.0.0/0 for the demo.
+- **Ports:** Web server app listens on **8000**; security group allows 22 (SSH) and 8000 from 0.0.0.0/0 for the demo.
 
 ---
 
 ## 4. Expected Results
 
-- The attacker (from the **attacker EC2**) gains **shell access** (RCE) on the **victim EC2** via the vulnerable web app (command injection).
-- Using the **victim EC2 instance IAM role**, the attacker:
-  - **Lists S3 buckets** in the account.
-  - **Reads sensitive data** from the scenario's S3 bucket (e.g. `sensitive/data.txt`).
-  - **Retrieves secrets** from AWS Systems Manager Parameter Store (e.g. `/cobra-scenario-8/secret`).
+- The attacker (from the **attacker EC2**) gains **shell access** (RCE) on the **web server EC2** via the vulnerable web app (command injection).
+- The **web server instance role** has **only** `sts:AssumeRole` (no direct S3, SSM, or Lambda access).
+- **Privilege escalation:** From the web server, the attacker calls **STS AssumeRole** to assume an **elevated IAM role** (trusted only by the web server role).
+- Using the **assumed (elevated) role** credentials, the attacker:
+  - **Lists S3 buckets** and **reads sensitive data** from the scenario's S3 bucket (e.g. `sensitive/data.txt`).
+  - **Retrieves the secret** from AWS Systems Manager Parameter Store (e.g. `/cobra-scenario-8/secret`).
   - **Creates a Lambda function** (`cobra-s8-backdoor`) for **persistence**.
-- **Privilege escalation:** From the victim EC2, the attacker calls **STS AssumeRole** to assume an **elevated IAM role** (trusted only by the victim role).
-- Using the **assumed role** credentials, the attacker:
-  - **Retrieves the same SSM secret** again (demonstrating escalated access and taking sensitive data).
   - **Creates an IAM user** (`cobra-s8-persist`) with an access key for **long-term persistence** in the account.
 
 ### Expected output
@@ -136,25 +134,15 @@ When you run the scenario (automated mode), you should see output similar to:
 Waiting for EC2 instances and vulnerable app to be ready...
 Loading: 100%|██████████| 100/100 [01:40<00:00,  1.00s/it]
 ------------------------------
-RCE check: run id on victim
-Loading |Warning: Permanently added '100.54.112.52' (ED25519) to the list of known hosts.
-  Output: uid=0(root) gid=0(root) groups=0(root)
+RCE check: run id on web server
+Loading |  Output: uid=0(root) gid=0(root) groups=0(root)
 ------------------------------
-List S3 buckets (using victim instance role)
-Loading |  Buckets: ["cobra-s8-bucket-needed-crane"]
-------------------------------
-Read S3 object (sensitive data)
-Loading |  Content: Sensitive data for COBRA scenario 8 demo.
-------------------------------
-Retrieve SSM Parameter Store secret
-Loading |  Secret: cobra-s8-demo-secret-value
-------------------------------
-Create Lambda function for persistence
-Loading |  Result: Lambda created
-------------------------------
-AssumeRole (privilege escalation from victim EC2)
+AssumeRole (privilege escalation from web server EC2) -> S3, SSM, Lambda, IAM user
 Loading |  AssumeRole: success
-  Secret (assumed role): cobra-s8-demo-secret-value
+  Buckets: ["cobra-s8-bucket-..."]
+  S3 content: Sensitive data for COBRA scenario 8 demo.
+  Secret: cobra-s8-demo-secret-value
+  Lambda created
   IAM user created, KeyId: AKIA...
 ------------------------------
 Scenario 8 executed successfully!
@@ -172,6 +160,6 @@ Scenario executed successfully!
 
 ### Limitations
 
-- The victim app listens on 0.0.0.0:8000; in production, restrict access and harden the app.
+- The web server app listens on 0.0.0.0:8000; in production, restrict access and harden the app.
 - Lambda creation uses a minimal handler; the scenario does not invoke the function or add event sources.
 - On re-run, the IAM user `cobra-s8-persist` may already exist; the create-user step is skipped and a new access key may be added.

