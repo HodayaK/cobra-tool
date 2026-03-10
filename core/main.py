@@ -52,7 +52,7 @@ def select_attack_scenario():
     print(colored("5. Instance takeover, abuse s3 access & perform ransomware using external KMS key", color="green"))
     print(colored("6. Azure Web Exploit, Abuse Managed Identity, Extract Secrets from Key Vault", color="green"))
     print(colored("7. Container Escape & Cluster Takeover in EKS", color="green"))
-    print(colored("8. Vulnerable web app (command injection) -> EC2 RCE -> S3, SSM, Lambda persistence", color="green"))
+    print(colored("8. Vulnerable web app (command injection) -> EC2 RCE -> AssumeRole privilege escalation -> S3, SSM, Lambda -> persistence", color="green"))
     print(colored("9. Exit", color="green"))
     while True:
         try:
