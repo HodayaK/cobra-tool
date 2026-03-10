@@ -34,18 +34,46 @@ def scenario_8_destroy():
     loading_animation()
     print("-" * 30)
 
+    deleted = []
+
     # Delete Lambda function created by exploit
-    subprocess.call(
+    rc = subprocess.call(
         f"aws lambda delete-function --function-name cobra-s8-backdoor --region {region}",
         shell=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
     )
+    if rc == 0:
+        deleted.append("Lambda function: cobra-s8-backdoor")
+    else:
+        print(colored("  Lambda cobra-s8-backdoor: not found or already deleted", color="yellow"))
 
     # Delete IAM user and access keys created by exploit (same pattern as scenario 2)
-    subprocess.call(
+    rc = subprocess.call(
         "aws iam list-access-keys --user-name cobra-s8-persist | jq -r '.AccessKeyMetadata[0].AccessKeyId' | xargs -I {} aws iam delete-access-key --user-name cobra-s8-persist --access-key-id {}",
         shell=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
     )
-    subprocess.call("aws iam delete-user --user-name cobra-s8-persist", shell=True)
+    if rc == 0:
+        deleted.append("IAM access key(s): cobra-s8-persist")
+
+    rc = subprocess.call(
+        "aws iam delete-user --user-name cobra-s8-persist",
+        shell=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    if rc == 0:
+        deleted.append("IAM user: cobra-s8-persist")
+    else:
+        print(colored("  IAM user cobra-s8-persist: not found or already deleted", color="yellow"))
+
+    if deleted:
+        print(colored("Resources deleted successfully:", color="green"))
+        for item in deleted:
+            print(colored(f"  - {item}", color="green"))
+        print("-" * 30)
 
     print(colored("Running Pulumi destroy...", color="yellow"))
     subprocess.call(
