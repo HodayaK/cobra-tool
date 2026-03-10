@@ -51,7 +51,7 @@ aws.iam.RolePolicyAttachment(
     policy_arn="arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
 )
 
-# Victim EC2 role: S3 read, SSM get, Lambda create, PassRole for lambda role
+# Victim EC2 role: S3 read, SSM get, Lambda create, PassRole for lambda role, AssumeRole for elevated role
 victim_role = aws.iam.Role(
     "victim-role",
     assume_role_policy="""{
@@ -63,7 +63,40 @@ victim_role = aws.iam.Role(
         }]
     }""",
 )
-def victim_policy_document(lambda_role_arn):
+
+# Elevated role: assumable only by victim role; has SSM get and IAM CreateUser/CreateAccessKey for persistence
+elevated_role = aws.iam.Role(
+    "elevated-role",
+    assume_role_policy=victim_role.arn.apply(
+        lambda arn: json.dumps({
+            "Version": "2012-10-17",
+            "Statement": [{
+                "Effect": "Allow",
+                "Principal": {"AWS": arn},
+                "Action": "sts:AssumeRole",
+            }],
+        })
+    ),
+)
+
+elevated_role_policy = json.dumps({
+    "Version": "2012-10-17",
+    "Statement": [
+        {"Effect": "Allow", "Action": ["ssm:GetParameter", "ssm:GetParameters"], "Resource": "*"},
+        {
+            "Effect": "Allow",
+            "Action": ["iam:CreateUser", "iam:CreateAccessKey", "iam:AttachUserPolicy", "iam:GetUser"],
+            "Resource": f"arn:aws:iam::{current.account_id}:user/cobra-s8-*",
+        },
+    ],
+})
+aws.iam.RolePolicy(
+    "elevated-role-policy",
+    role=elevated_role.name,
+    policy=elevated_role_policy,
+)
+
+def victim_policy_document(lambda_role_arn, elevated_role_arn):
     return json.dumps({
         "Version": "2012-10-17",
         "Statement": [
@@ -71,13 +104,16 @@ def victim_policy_document(lambda_role_arn):
             {"Effect": "Allow", "Action": ["ssm:GetParameter", "ssm:GetParameters"], "Resource": "*"},
             {"Effect": "Allow", "Action": ["lambda:CreateFunction", "lambda:GetFunction"], "Resource": "*"},
             {"Effect": "Allow", "Action": "iam:PassRole", "Resource": lambda_role_arn},
+            {"Effect": "Allow", "Action": "sts:AssumeRole", "Resource": elevated_role_arn},
         ],
     })
 
 victim_policy = aws.iam.RolePolicy(
     "victim-policy",
     role=victim_role.name,
-    policy=lambda_exec_role.arn.apply(victim_policy_document),
+    policy=pulumi.Output.all(lambda_exec_role.arn, elevated_role.arn).apply(
+        lambda t: victim_policy_document(t[0], t[1])
+    ),
 )
 victim_profile = aws.iam.InstanceProfile("victim-profile", role=victim_role.name)
 
@@ -172,5 +208,6 @@ pulumi.export("Bucket Name", bucket.id)
 pulumi.export("Bucket Key", bucket_key)
 pulumi.export("SSM Parameter Name", ssm_param.name)
 pulumi.export("Lambda Execution Role Arn", lambda_exec_role.arn)
+pulumi.export("Elevated Role Arn", elevated_role.arn)
 pulumi.export("Region", region.name)
 pulumi.export("Key Pair Name", key_pair.key_name)

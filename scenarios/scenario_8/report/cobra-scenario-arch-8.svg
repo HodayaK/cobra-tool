@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 520" width="900" height="520">
+  <defs>
+    <style>
+      .title { font: bold 14px Arial, sans-serif; fill: #333; }
+      .label { font: 11px Arial, sans-serif; fill: #333; }
+      .seq-title { font: bold 11px Arial, sans-serif; fill: #333; }
+      .seq-item { font: 10px Arial, sans-serif; fill: #333; }
+      .aws-box { fill: none; stroke: #232f3e; stroke-width: 2; }
+      .attacker-box { fill: none; stroke: #333; stroke-width: 1.5; stroke-dasharray: 6,4; }
+      .seq-box { fill: #f9f9f9; stroke: #666; stroke-width: 1; stroke-dasharray: 4,2; }
+      .component { fill: #fff; stroke: #666; stroke-width: 1; }
+      .arrow { stroke: #333; stroke-width: 1.5; fill: none; }
+      .arrow-dashed { stroke: #333; stroke-width: 1.5; fill: none; stroke-dasharray: 6,4; }
+    </style>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#333"/>
+    </marker>
+  </defs>
+  <!-- Title -->
+  <text x="450" y="22" text-anchor="middle" class="title">COBRA: Attack Scenario 8 - Vulnerable Web (RCE) -&gt; EC2 Creds -&gt; S3, SSM, Lambda -&gt; AssumeRole Escalation -&gt; Persistence</text>
+
+  <!-- Attacker -->
+  <g id="attacker">
+    <rect x="20" y="50" width="140" height="100" class="attacker-box" rx="4"/>
+    <text x="90" y="78" text-anchor="middle" class="seq-title">Attacker EC2</text>
+    <rect x="45" y="88" width="90" height="50" class="component" rx="3"/>
+    <text x="90" y="118" text-anchor="middle" class="label">curl / HTTP</text>
+    <text x="90" y="132" text-anchor="middle" class="label">-&gt; Victim :8000</text>
+  </g>
+
+  <!-- AWS boundary -->
+  <rect x="200" y="40" width="680" height="380" class="aws-box" rx="6"/>
+  <text x="210" y="58" class="label" font-weight="bold">AWS</text>
+
+  <!-- Victim EC2 + Vulnerable App -->
+  <g id="victim">
+    <rect x="230" y="70" width="180" height="120" class="component" rx="4" stroke="#e47911" stroke-width="1.5"/>
+    <text x="320" y="92" text-anchor="middle" class="label" font-weight="bold">Vulnerable Web App</text>
+    <text x="320" y="108" text-anchor="middle" class="label">(Command Injection -&gt; RCE)</text>
+    <rect x="250" y="118" width="140" height="28" class="component" rx="2"/>
+    <text x="320" y="136" text-anchor="middle" class="label">EC2 Instance</text>
+    <rect x="258" y="155" width="124" height="22" class="component" rx="2"/>
+    <text x="320" y="170" text-anchor="middle" class="label">IMDS / Instance Role</text>
+  </g>
+
+  <!-- EC2 Role (Victim) -->
+  <g id="victim-role">
+    <rect x="450" y="95" width="100" height="55" class="component" rx="3"/>
+    <text x="500" y="118" text-anchor="middle" class="label">EC2 Role</text>
+    <text x="500" y="132" text-anchor="middle" class="label">(Victim)</text>
+    <text x="500" y="146" text-anchor="middle" class="label">S3, SSM,</text>
+    <text x="500" y="160" text-anchor="middle" class="label">Lambda, PassRole,</text>
+    <text x="500" y="174" text-anchor="middle" class="label">AssumeRole</text>
+  </g>
+
+  <!-- Elevated Role (assumable by victim only) -->
+  <g id="elevated-role">
+    <rect x="450" y="230" width="120" height="60" class="component" rx="3" stroke="#c41" stroke-width="1.2"/>
+    <text x="510" y="252" text-anchor="middle" class="label" font-weight="bold">Elevated Role</text>
+    <text x="510" y="268" text-anchor="middle" class="label">SSM, IAM CreateUser</text>
+    <text x="510" y="284" text-anchor="middle" class="label">(AssumeRole)</text>
+  </g>
+
+  <!-- S3 -->
+  <g id="s3">
+    <rect x="600" y="70" width="80" height="70" class="component" rx="3"/>
+    <text x="640" y="100" text-anchor="middle" class="label">S3</text>
+    <text x="640" y="118" text-anchor="middle" class="label">List / Read</text>
+    <text x="640" y="132" text-anchor="middle" class="label">sensitive data</text>
+  </g>
+
+  <!-- SSM -->
+  <g id="ssm">
+    <rect x="600" y="155" width="80" height="55" class="component" rx="3"/>
+    <text x="640" y="180" text-anchor="middle" class="label">SSM</text>
+    <text x="640" y="198" text-anchor="middle" class="label">GetParameter</text>
+  </g>
+
+  <!-- Lambda (Persistence) -->
+  <g id="lambda">
+    <rect x="720" y="85" width="90" height="70" class="component" rx="3"/>
+    <text x="765" y="112" text-anchor="middle" class="label">Lambda</text>
+    <text x="765" y="128" text-anchor="middle" class="label">Backdoor</text>
+    <text x="765" y="144" text-anchor="middle" class="label">(Persistence)</text>
+  </g>
+
+  <!-- IAM User (Persistence) -->
+  <g id="iam-user">
+    <rect x="720" y="230" width="90" height="55" class="component" rx="3"/>
+    <text x="765" y="252" text-anchor="middle" class="label">IAM User</text>
+    <text x="765" y="268" text-anchor="middle" class="label">cobra-s8-persist</text>
+    <text x="765" y="284" text-anchor="middle" class="label">(Persistence)</text>
+  </g>
+
+  <!-- Arrows -->
+  <!-- 1: Attacker -> Victim -->
+  <line x1="160" y1="100" x2="228" y2="130" class="arrow" marker-end="url(#arrowhead)"/>
+  <text x="188" y="112" class="label">1</text>
+  <!-- 2: Victim -> Role (use creds) -->
+  <line x1="410" y1="125" x2="448" y2="122" class="arrow" marker-end="url(#arrowhead)"/>
+  <text x="422" y="118" class="label">2</text>
+  <!-- 3: Role -> S3 -->
+  <line x1="550" y1="108" x2="598" y2="105" class="arrow" marker-end="url(#arrowhead)"/>
+  <text x="568" y="100" class="label">3</text>
+  <!-- 4: Role -> SSM -->
+  <line x1="550" y1="135" x2="598" y2="182" class="arrow" marker-end="url(#arrowhead)"/>
+  <text x="568" y="162" class="label">4</text>
+  <!-- 5: Role -> Lambda -->
+  <line x1="550" y1="122" x2="718" y2="120" class="arrow" marker-end="url(#arrowhead)"/>
+  <text x="628" y="115" class="label">5</text>
+  <!-- 6: Victim Role -> Elevated Role (AssumeRole) -->
+  <line x1="500" y1="150" x2="510" y2="228" class="arrow-dashed" marker-end="url(#arrowhead)"/>
+  <text x="498" y="192" class="label">6</text>
+  <!-- 7: Elevated Role -> SSM (get secret with assumed role) -->
+  <line x1="568" y1="260" x2="638" y2="212" class="arrow" marker-end="url(#arrowhead)"/>
+  <text x="598" y="232" class="label">7</text>
+  <!-- 8: Elevated Role -> IAM User -->
+  <line x1="568" y1="275" x2="718" y2="257" class="arrow" marker-end="url(#arrowhead)"/>
+  <text x="638" y="262" class="label">8</text>
+
+  <!-- Attack Sequence box -->
+  <rect x="20" y="320" width="380" height="115" class="seq-box" rx="4"/>
+  <text x="210" y="342" text-anchor="middle" class="seq-title">Attack Sequence</text>
+  <text x="35" y="362" class="seq-item">1. Attacker exploits vulnerable web app (command injection) -&gt; RCE.</text>
+  <text x="35" y="378" class="seq-item">2. Get shell on victim EC2; use instance metadata (IMDS) for role creds.</text>
+  <text x="35" y="394" class="seq-item">3. Use victim role: S3 list &amp; read sensitive data.</text>
+  <text x="35" y="410" class="seq-item">4. SSM GetParameter to retrieve secrets.</text>
+  <text x="35" y="426" class="seq-item">5. Create Lambda function (backdoor) for persistence.</text>
+  <text x="35" y="442" class="seq-item">6. AssumeRole: victim role assumes elevated role (privilege escalation).</text>
+  <text x="35" y="458" class="seq-item">7. With assumed role: get SSM secret again (sensitive data).</text>
+  <text x="35" y="474" class="seq-item">8. Create IAM user + access key for long-term persistence.</text>
+</svg>
