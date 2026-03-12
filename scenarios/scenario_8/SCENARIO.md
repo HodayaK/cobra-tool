@@ -160,6 +160,4 @@ Scenario executed successfully!
 
 ### Limitations
 
-- The web server app listens on 0.0.0.0:8000; in production, restrict access and harden the app.
 - Lambda creation uses a minimal handler; the scenario does not invoke the function or add event sources.
-- On re-run, the IAM user `cobra-s8-persist` may already exist; the create-user step is skipped and a new access key may be added.
